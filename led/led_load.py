@@ -6,8 +6,13 @@ over the last sampling interval, read from /proc/stat. Readings are
 smoothed with an exponential moving average so sub-second blips (like
 MPI process startup) barely register, while sustained load shows at
 full height. Runs forever; clears the display on exit.
+
+When the busiest core is below THRESHOLD the node shows its own letter
+instead (node01=N, node02=S, node03=C, node04=C), so the four matrices
+spell NSCC at rest and turn into load bars while a job runs.
 """
 import signal
+import socket
 import sys
 import time
 
@@ -17,6 +22,21 @@ INTERVAL  = 0.2   # seconds between samples
 BRIGHT    = 4     # 0 (dim) .. 15 (blinding); keep low, it is plenty
 ROTATE    = 0     # 0/1/2/3 = quarter turns, adjust to your module's mounting
 SMOOTH    = 0.5   # 0 = raw readings, closer to 1 = smoother/slower
+THRESHOLD = 0.15  # busiest core above this -> show bars, else show the letter
+
+# 8 row-bytes per letter, top row first, leftmost column = highest bit
+LETTERS = {
+    "N": [0xC6, 0xCE, 0xDE, 0xF6, 0xE6, 0xC6, 0xC6, 0x00],
+    "S": [0x78, 0xCC, 0xE0, 0x70, 0x1C, 0xCC, 0x78, 0x00],
+    "C": [0x3C, 0x66, 0xC0, 0xC0, 0xC0, 0x66, 0x3C, 0x00],
+}
+LETTER_FOR = {
+    "picluster-node01": "N",
+    "picluster-node02": "S",
+    "picluster-node03": "C",
+    "picluster-node04": "C",
+}
+IDLE = LETTERS.get(LETTER_FOR.get(socket.gethostname(), ""), [0] * 8)
 
 spi = spidev.SpiDev()
 spi.open(0, 0)                # bus 0, CE0
@@ -93,5 +113,8 @@ while True:
         dt = cur[cpu][1] - prev[cpu][1]
         loads.append(db / dt if dt > 0 else 0.0)
     ema = [SMOOTH * e + (1 - SMOOTH) * l for e, l in zip(ema, loads)]
-    show(bar_frame(ema))
+    if max(ema) > THRESHOLD:
+        show(bar_frame(ema))
+    else:
+        show(IDLE)
     prev = cur
