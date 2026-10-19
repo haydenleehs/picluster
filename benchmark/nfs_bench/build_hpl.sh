@@ -25,7 +25,7 @@ sed -i \
   -e "s|^CC .*|CC         = mpicc|" \
   -e "s|^LINKER .*|LINKER     = mpicc|" \
   -e "s|^LAlib .*|LAlib      = -lopenblas|" \
-  -e "s|^CCFLAGS .*|CCFLAGS    = -O3 -mcpu=native|" \
+  -e "s|^CCFLAGS .*|CCFLAGS    = \$(HPL_DEFS) -O3 -mcpu=native|" \
   Make.rpi
 
 echo "== build"
