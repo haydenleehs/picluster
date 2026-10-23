@@ -29,8 +29,90 @@ On `picluster-login`:
 
 ```bash
 mkdir -p /clusterfs/crack
-# create /clusterfs/crack/hash_crack.py
-# (MPI brute-force script — see repo for full source)
+tee /clusterfs/crack/hash_crack.py >/dev/null <<'EOF'
+#!/usr/bin/env python3
+"""Brute-force MD5 cracker, parallelised with MPI (mpi4py).
+
+Each rank searches an interleaved slice of the keyspace (rank r checks
+indices r, r+size, r+2*size, ...) so work stays balanced even if the
+answer sits near the start. Ranks periodically check for a "found"
+broadcast from whoever wins, same idle-wait spirit as the Ibarrier
+pattern used in pi_montecarlo.py.
+
+Usage:
+    mpirun -n <ranks> python3 hash_crack.py <target_md5_hash> [length]
+"""
+import sys
+import time
+import hashlib
+import string
+from mpi4py import MPI
+
+ALPHABET    = string.ascii_lowercase
+CHECK_EVERY = 20_000      # how often to poll for a "found" signal
+POLL        = 0.02
+
+
+def idx_to_str(i, length, alphabet=ALPHABET):
+    base = len(alphabet)
+    chars = []
+    for _ in range(length):
+        i, rem = divmod(i, base)
+        chars.append(alphabet[rem])
+    return "".join(reversed(chars))
+
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
+
+if len(sys.argv) < 2:
+    if rank == 0:
+        print("usage: hash_crack.py <target_md5_hash> [length]")
+    sys.exit(1)
+
+target = sys.argv[1].lower()
+length = int(sys.argv[2]) if len(sys.argv) > 2 else 5
+total  = len(ALPHABET) ** length
+
+req = comm.Ibarrier()
+while not req.Test():
+    time.sleep(POLL)
+t_start = MPI.Wtime()
+
+found_req = comm.irecv(source=MPI.ANY_SOURCE, tag=99)
+found = None
+i = rank
+checked = 0
+while i < total:
+    candidate = idx_to_str(i, length)
+    if hashlib.md5(candidate.encode()).hexdigest() == target:
+        found = candidate
+        for r in range(size):
+            if r != rank:
+                comm.isend(candidate, dest=r, tag=99)
+        break
+    i += size
+    checked += 1
+    if checked % CHECK_EVERY == 0:
+        done, msg = found_req.test()
+        if done:
+            found = msg
+            break
+        found_req.cancel()
+        found_req = comm.irecv(source=MPI.ANY_SOURCE, tag=99)
+
+results = comm.gather(found, root=0)
+t_end = MPI.Wtime()
+
+if rank == 0:
+    answer = next((r for r in results if r), None)
+    wall = t_end - t_start
+    if answer:
+        print(f"Cracked: '{answer}' in {wall:.2f} s using {size} rank(s)")
+    else:
+        print(f"No match found in {wall:.2f} s using {size} rank(s)")
+EOF
 ```
 
 ### 2. Generate a target hash and test by hand
@@ -56,12 +138,57 @@ under ~60 s on 1 rank).
 
 Three SLURM scripts, identical except rank/node count:
 
-- `crack_1rank.sh` — 1 node, 1 task
-- `crack_4rank.sh` — 1 node, 4 tasks
-- `crack_16rank.sh` — 4 nodes, 16 tasks (4 per node)
+```bash
+tee /clusterfs/crack/crack_1rank.sh >/dev/null <<'EOF'
+#!/bin/bash
+#SBATCH --job-name=crack-1rank
+#SBATCH --partition=cluster
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --time=00:10:00
+#SBATCH --output=/clusterfs/crack/%x-%j.out
 
-Each takes the target hash and length as arguments and calls
-`mpirun -n "$SLURM_NTASKS" python3 hash_crack.py "$1" "${2:-6}"`.
+cd /clusterfs/crack
+echo "host=$(hostname)  ranks=$SLURM_NTASKS"
+mpirun -n "$SLURM_NTASKS" python3 hash_crack.py "$1" "${2:-6}"
+EOF
+
+tee /clusterfs/crack/crack_4rank.sh >/dev/null <<'EOF'
+#!/bin/bash
+#SBATCH --job-name=crack-4rank
+#SBATCH --partition=cluster
+#SBATCH --nodes=1
+#SBATCH --ntasks=4
+#SBATCH --time=00:10:00
+#SBATCH --output=/clusterfs/crack/%x-%j.out
+
+cd /clusterfs/crack
+echo "host=$(hostname)  ranks=$SLURM_NTASKS"
+mpirun -n "$SLURM_NTASKS" python3 hash_crack.py "$1" "${2:-6}"
+EOF
+
+tee /clusterfs/crack/crack_16rank.sh >/dev/null <<'EOF'
+#!/bin/bash
+#SBATCH --job-name=crack-16rank
+#SBATCH --partition=cluster
+#SBATCH --nodes=4
+#SBATCH --ntasks=16
+#SBATCH --ntasks-per-node=4
+#SBATCH --time=00:10:00
+#SBATCH --output=/clusterfs/crack/%x-%j.out
+
+cd /clusterfs/crack
+echo "host=$(hostname)  ranks=$SLURM_NTASKS"
+srun --mpi=pmix python3 hash_crack.py "$1" "${2:-6}"
+EOF
+
+chmod +x /clusterfs/crack/crack_*.sh
+```
+
+> The 16-rank script uses `srun --mpi=pmix` instead of `mpirun` so
+> SLURM handles cross-node placement directly — check this matches
+> whichever launcher you ended up using for multi-node runs of
+> `pi_4rank.sh`, and swap it if your setup uses a hostfile instead.
 
 ### 5. Submit and compare
 
