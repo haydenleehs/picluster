@@ -82,6 +82,39 @@ the whole run and sweep on completion.
 
 ---
 
+## Why this matters
+
+This demo is worth running over a generic "watch it go fast" demo for
+a few reasons:
+
+- **It's the clearest story on the cluster.** The π workload has a
+  fixed serial section that caps its speedup (Amdahl's law), so the
+  gains flatten out. Password cracking has no such bottleneck — the
+  speedup stays close to linear, so doubling ranks visibly halves the
+  time every single run. That's the easiest "more cores = more power"
+  moment to land with a non-technical audience.
+- **It teaches a real security lesson, not just a performance one.**
+  "Short passwords are weak" is abstract until you watch a 5-character
+  one fall in under a second. Making the weakness visible is more
+  convincing than stating it.
+- **It connects HPC to cybersecurity directly.** Most visitors think
+  of supercomputers as being for weather or physics. Showing that the
+  same parallel-computing principle is also how attackers brute-force
+  credentials — and how defenders reason about password policy and
+  hashing cost — broadens what people think HPC is for.
+- **It ties back to your own coursework.** Framing it as "offense and
+  defense of cybersecurity" rather than just "cracking passwords" is
+  a deliberate choice: it's accurate, it's a stronger hook than a pure
+  performance demo, and it signals your program's focus if staff or
+  recruiters are in the audience.
+- **The ethics framing matters as much as the technical setup.**
+  Always crack a password you hashed yourself live on stage, never a
+  real credential. That one detail is what keeps the demo
+  unambiguously educational instead of looking like you're
+  demonstrating an attack on someone's actual secret.
+
+---
+
 ## Explaining it to the public
 
 **Opening line:**
