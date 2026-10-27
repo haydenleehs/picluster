@@ -26,7 +26,7 @@ rm -f /clusterfs/aero/aero-*.out /clusterfs/aero/results.json   # clean slate
 cd /clusterfs/aero && python3 -m http.server 8000  # leave running in a spare terminal
 ```
 
-Open `http://picluster-login:8000/aerofoil.html` on the demo laptop (Tailscale on).
+Open `http://10.0.0.1:8000/aerofoil.html` on the demo laptop (plugged into the cluster switch by Ethernet, see section 6).
 Keep a second terminal on the login node for SLURM commands.
 
 ---
@@ -47,26 +47,26 @@ The LED bars on the compute nodes are flat.
 **Step 3: Submit the sweep (1 min).**
 ```bash
 cd /clusterfs/aero
-sbatch -J aero-1  --nodes=1 --ntasks=1  aero.sh
+sbatch -J aero-4  --nodes=1 --ntasks=4  aero.sh
 sbatch -J aero-16 --nodes=4 --ntasks=16 aero.sh
 squeue                                  # watch them run
 ```
-The 1-rank job lights one bar on one node. The 16-rank job fills all four bars on all four nodes.
+The 4-rank job fills the four bars on one node (all 4 cores of one Pi). The 16-rank job fills the bars on all four nodes.
 
 **Step 4: Read the result (1 min).**
 ```bash
-cat aero-1-*.out aero-16-*.out
+cat aero-4-*.out aero-16-*.out
 ```
 Both files give the **same designs** (correct: parallel does not change the answer) but the **wall time** differs.
 
 ```
-speedup    = wall_1 / wall_16
-efficiency = speedup / 16
+speedup    = wall_4 / wall_16      (ideal = 4, since 4x the cores on 4x the nodes)
+efficiency = speedup / 4
 ```
 
 | Run | Ranks | Nodes | Wall time (s) |
 |---|---|---|---|
-| aero-1 | 1 | 1 | |
+| aero-4 | 4 | 1 | |
 | aero-16 | 16 | 4 | |
 
 **Step 5: Take the answer back to the game (1 min).**
@@ -82,7 +82,7 @@ which is why centres like ASPIRE 2A need thousands of nodes, a scheduler (SLURM)
 ## 3. Talking points
 
 - **Why the same answer, less time?** Each rank takes every 16th design (`designs[rank::size]`). Rank 0 gathers the results.
-- **Why isn't speedup a perfect 16x?** Startup cost, the final gather, and the Pis' gigabit network (ASPIRE 2A+ uses 400 Gb/s InfiniBand).
+- **Why isn't speedup a perfect 4x (4 cores on 1 node vs 16 cores on 4 nodes)?** Startup cost, the final gather, and the Pis' gigabit network (ASPIRE 2A+ uses 400 Gb/s InfiniBand).
 - **Is this sweep too small for a cluster?** Yes, a laptop would finish it quickly. It stands in for much bigger problems.
 
 ---
@@ -97,7 +97,7 @@ which is why centres like ASPIRE 2A need thousands of nodes, a scheduler (SLURM)
 | Job killed / out of memory | Use refinement 1 (about 620k designs) |
 | LED bars stay dark | `ssh <node> "sudo systemctl restart led-load"` |
 | **Fly this design** does nothing | Hard refresh (Ctrl+Shift+R); check the browser console (F12) for errors |
-| Page not reachable | Check the `http.server` terminal is still running and Tailscale is connected |
+| Page not reachable | Check the `http.server` terminal is still running, the laptop is on the cluster switch (has a `10.0.0.x` address) and you used `http://10.0.0.1:8000/aerofoil.html` |
 
 ---
 
@@ -112,3 +112,37 @@ scancel -u $USER
 
 - The model is simplified (1,000 kg aircraft, 16 m² wing). It is for intuition, not for real wing design.
 - A stalled wing is shown as a warning and a drag penalty, not a flight failure.
+
+---
+
+## 6. Putting it online (over Ethernet, no Tailscale)
+
+The login node is the gateway of the cluster LAN (`10.0.0.1` on `eth0`), so any laptop plugged into the cluster
+switch can reach it directly.
+
+**a) Get the files onto the login node.** From the laptop on the same Ethernet network:
+
+```bash
+scp aerofoil.html aero_sweep.py aero.sh minhcluster@10.0.0.1:/clusterfs/aero/
+```
+
+(or `vim` them in directly on the login node, or `git pull` if you use the repo.)
+
+**b) Serve the page** on the login node:
+
+```bash
+cd /clusterfs/aero && python3 -m http.server 8000
+```
+
+To keep it running after you close the terminal: `nohup python3 -m http.server 8000 --directory /clusterfs/aero > /dev/null 2>&1 &`
+(stop it later with `pkill -f "http.server 8000"`).
+
+**c) Connect the demo laptop.** Plug it into the cluster switch. The login node hands out `10.0.0.x` addresses by DHCP
+on that port, so the laptop gets one automatically (check with `ip a` or `ifconfig`). Then open:
+
+```
+http://10.0.0.1:8000/aerofoil.html
+```
+
+Use the IP address. The name `picluster-login` only resolves on the cluster nodes, not on your laptop.
+If the laptop does not get an address, set it manually to `10.0.0.50/24` with gateway `10.0.0.1`.
