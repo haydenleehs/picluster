@@ -29,18 +29,7 @@ scp evolve.html aero_evolve.py evolve.sh minhcluster@10.0.0.1:/clusterfs/aero_ev
 
 (or `vim` the files in directly on the login node.)
 
-**b) Random run each time, fixed run when you ask for it (apply once):**
-
-```bash
-cd /clusterfs/aero_evolve
-sed -i 's|^rng = np.random.default_rng(1234 + rank)|seed = int(sys.argv[4]) if len(sys.argv) > 4 else int(time.time() * 1000) % 1000003\nrng = np.random.default_rng(seed + rank)|' aero_evolve.py
-sed -i 's|2400 30$|2400 30 ${SEED}|' evolve.sh
-grep -n "seed\|SEED" aero_evolve.py evolve.sh      # both edits should show
-```
-
-Without a seed, every run is different. With `SEED=1`, the same rank count gives the same run, which is what you want for timed comparisons.
-
-**c) Check the LED service on the compute nodes** (the bars pulse while the job runs):
+**b) Check the LED service on the compute nodes** (the bars pulse while the job runs):
 
 ```bash
 for h in picluster-node0{1..4}; do ssh $h "systemctl is-active led-load"; done   # four lines: active
@@ -108,11 +97,11 @@ PACE=0.8 sbatch -J evo-16 --nodes=4 --ntasks=16 evolve.sh
 squeue
 ```
 
-**Timed comparison** (no `PACE`, same seed, same total work: the only thing that changes is the number of ranks):
+**Timed comparison** (no `PACE`, same total work: the only thing that changes is the number of ranks):
 
 ```bash
-SEED=1 sbatch -J evo-4  --nodes=1 --ntasks=4  evolve.sh
-SEED=1 sbatch -J evo-16 --nodes=4 --ntasks=16 evolve.sh
+sbatch -J evo-4  --nodes=1 --ntasks=4  evolve.sh
+sbatch -J evo-16 --nodes=4 --ntasks=16 evolve.sh
 cat evo-4-*.out evo-16-*.out
 ```
 
@@ -127,7 +116,7 @@ efficiency = speedup / 4
 | evo-16 | 16 | 4 | |
 
 The total population (2400) and generations (30) are fixed, so more ranks means each island does less work.
-Both runs should print a similar best wing, but not exactly identical: the islands differ with the rank count.
+The random generator uses a fixed seed, so repeating a run with the same rank count gives exactly the same result. Runs with different rank counts should print a similar best wing, but not exactly identical: the islands differ with the rank count.
 If the times are too short to compare, raise `2400` in `evolve.sh`.
 
 ---
@@ -157,7 +146,7 @@ Let someone set the **Race the Cluster** sliders to their best guess.
 
 | Question | Answer |
 |---|---|
-| Does it give the same answer every time? | No. Each run starts from a different random population, but it settles in a similar region, because there is one clear best compromise. With a fixed seed it repeats exactly. |
+| Does it give the same answer every time? | With the same number of ranks, yes: the random generator has a fixed seed, so a run repeats exactly. With a different rank count the islands differ, so the result is similar but not identical. |
 | Couldn't a laptop do this? | Yes. The problem is small on purpose. The cluster stands in for much bigger searches. |
 | Is the airflow real? | No. Lift and drag come from simple aerodynamic formulas, and the streamlines on the page are drawn graphics, not a fluid simulation. |
 | Why isn't 16 ranks 4 times faster than 4? | Startup cost, the per-generation waiting and sharing, and the Pis' gigabit network (ASPIRE 2A+ uses 400 Gb/s InfiniBand). |
