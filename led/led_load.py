@@ -20,7 +20,7 @@ import spidev
 
 INTERVAL  = 0.2   # seconds between samples
 BRIGHT    = 4     # 0 (dim) .. 15 (blinding); keep low, it is plenty
-ROTATE    = 0     # 0/1/2/3 = quarter turns, adjust to your module's mounting
+ROTATE    = 2     # 0/1/2/3 = quarter turns, adjust to your module's mounting
 SMOOTH    = 0.5   # 0 = raw readings, closer to 1 = smoother/slower
 THRESHOLD = 0.15  # busiest core above this -> show bars, else show the letter
 
@@ -31,10 +31,10 @@ LETTERS = {
     "C": [0x3C, 0x66, 0xC0, 0xC0, 0xC0, 0x66, 0x3C, 0x00],
 }
 LETTER_FOR = {
-    "picluster-node01": "N",
+    "picluster-node01": "C",
     "picluster-node02": "S",
     "picluster-node03": "C",
-    "picluster-node04": "C",
+    "picluster-node04": "N",
 }
 IDLE = LETTERS.get(LETTER_FOR.get(socket.gethostname(), ""), [0] * 8)
 
